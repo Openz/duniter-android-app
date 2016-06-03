@@ -34,6 +34,7 @@ import org.duniter.app.model.EntityServices.BlockService;
 import org.duniter.app.model.EntityServices.CurrencyService;
 import org.duniter.app.services.SqlService;
 import org.duniter.app.technical.callback.CallbackBlock;
+import org.duniter.app.view.currency.RulesBisFragment;
 import org.duniter.app.view.identity.IdentityListFragment;
 import org.duniter.app.view.currency.BlockListFragment;
 import org.duniter.app.view.currency.RulesFragment;

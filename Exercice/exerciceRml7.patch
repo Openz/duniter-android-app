@@ -1,0 +1,537 @@
+Index: app/src/main/java/org/duniter/app/view/MainActivity.java
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- app/src/main/java/org/duniter/app/view/MainActivity.java	(revision cb0a141b2ddab60d5c27b62fdf043fe04eb8a4e2)
++++ app/src/main/java/org/duniter/app/view/MainActivity.java	(revision )
+@@ -34,6 +34,7 @@
+ import org.duniter.app.model.EntityServices.CurrencyService;
+ import org.duniter.app.services.SqlService;
+ import org.duniter.app.technical.callback.CallbackBlock;
++import org.duniter.app.view.currency.RulesBisFragment;
+ import org.duniter.app.view.identity.IdentityListFragment;
+ import org.duniter.app.view.currency.BlockListFragment;
+ import org.duniter.app.view.currency.RulesFragment;
+@@ -416,7 +417,8 @@
+ //                break;
+             case R.id.drawer_rules:
+                 removeList(false);
+-                setCurrentFragment(RulesFragment.newInstance(currency));
++//                setCurrentFragment(RulesFragment.newInstance(currency));
++                setCurrentFragment(RulesBisFragment.newInstance(currency));
+                 break;
+ //            case R.id.drawer_peers:
+ //                removeList(false);
+\ No newline at end of file
+Index: app/src/main/java/org/duniter/app/view/currency/RulesBisFragment.java
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- app/src/main/java/org/duniter/app/view/currency/RulesBisFragment.java	(revision )
++++ app/src/main/java/org/duniter/app/view/currency/RulesBisFragment.java	(revision )
+@@ -0,0 +1,167 @@
++package org.duniter.app.view.currency;
++
++import android.app.Fragment;
++import android.os.Bundle;
++import android.preference.PreferenceManager;
++import android.support.v4.widget.SwipeRefreshLayout;
++import android.view.LayoutInflater;
++import android.view.View;
++import android.view.ViewGroup;
++import android.widget.CompoundButton;
++import android.widget.LinearLayout;
++import android.widget.ProgressBar;
++import android.widget.ScrollView;
++import android.widget.Switch;
++import android.widget.TextView;
++
++import org.duniter.app.Application;
++import org.duniter.app.Format;
++import org.duniter.app.R;
++import org.duniter.app.model.Entity.BlockUd;
++import org.duniter.app.model.Entity.Currency;
++import org.duniter.app.model.EntityServices.BlockService;
++import org.duniter.app.services.SqlService;
++import org.duniter.app.technical.callback.CallbackBlock;
++import org.duniter.app.view.MainActivity;
++
++import java.math.BigDecimal;
++import java.math.BigInteger;
++import java.math.RoundingMode;
++import java.text.Normalizer;
++import java.text.SimpleDateFormat;
++import java.util.Date;
++
++public class RulesBisFragment extends Fragment implements
++        SwipeRefreshLayout.OnRefreshListener {
++
++    private static Currency currency;
++
++    private BlockUd lastUd;
++    private BlockUd currentBlock;
++
++    private ViewHolder holder;
++    private SwipeRefreshLayout mSwipeLayout;
++
++    public static RulesBisFragment newInstance(Currency _currency) {
++        currency = _currency;
++        RulesBisFragment fragment = new RulesBisFragment();
++        fragment.setArguments(new Bundle());
++        return fragment;
++    }
++
++    @Override
++    public void onCreate(Bundle savedInstanceState) {
++        super.onCreate(savedInstanceState);
++    }
++
++    @Override
++    public View onCreateView(LayoutInflater inflater, ViewGroup container,
++                             Bundle savedInstanceState) {
++        super.onCreateView(inflater, container, savedInstanceState);
++        if (getActivity() instanceof MainActivity) {
++            ((MainActivity) getActivity()).setDrawerIndicatorEnabled(false);
++        }
++        getActivity().setTitle(getActivity().getString(R.string.list_rules));
++
++        return inflater.inflate(R.layout.fragment_currency_rules_bis,
++                container, false);
++    }
++
++    @Override
++    public void onViewCreated(View view, Bundle savedInstanceState) {
++        super.onViewCreated(view, savedInstanceState);
++        setHasOptionsMenu(true);
++        holder = new ViewHolder(view);
++
++        mSwipeLayout = (SwipeRefreshLayout) view.findViewById(R.id.swipe_layout);
++        mSwipeLayout.setOnRefreshListener(this);
++
++        onRefresh();
++    }
++
++    private void initDu(){
++        int decimal = PreferenceManager.getDefaultSharedPreferences(getActivity()).getInt(Application.DECIMAL, 2);
++
++        BigInteger mass = currentBlock.getMonetaryMass();
++        BigInteger massMember = currentBlock.getMonetaryMass().divide(new BigInteger(String.valueOf(currentBlock.getMembersCount())));
++        BigInteger du = lastUd.getDividend();
++
++        BigDecimal _mass = new BigDecimal(mass).divide(new BigDecimal(du),decimal, RoundingMode.HALF_EVEN);
++        BigDecimal _massMember = new BigDecimal(massMember).divide(new BigDecimal(du),decimal, RoundingMode.HALF_EVEN);
++        BigDecimal _du = new BigDecimal(du).divide(new BigDecimal(du),decimal, RoundingMode.HALF_EVEN);
++
++        String cActual = _du.divide(_massMember,8, RoundingMode.HALF_EVEN).multiply(new BigDecimal("100")).setScale(2, BigDecimal.ROUND_HALF_EVEN).toString();
++
++        if (!holder.switch2.isChecked()){
++            holder.monetary_mass.setText(Format.quantitativeFormatter(getActivity(),mass,currency.getName()));
++            holder.monetary_member.setText(Format.quantitativeFormatter(getActivity(),massMember,currency.getName()));
++            holder.universale_dividende.setText(Format.quantitativeFormatter(getActivity(),du,currency.getName()));
++        }else{
++            holder.monetary_mass.setText(Format.relativeFormatter(getActivity(),_mass));
++            holder.monetary_member.setText(Format.relativeFormatter(getActivity(),_massMember));
++            holder.universale_dividende.setText(Format.relativeFormatter(getActivity(),_du));
++        }
++
++        holder.c.setText(cActual+"%");
++    }
++
++    private void init(){
++
++        holder.currency_name.setText(currency.getName());
++        holder.nb_member.setText(String.valueOf(currentBlock.getMembersCount()));
++        holder.nb_new_member.setText(String.valueOf(currentBlock.getMembersCount()-lastUd.getMembersCount()));
++        holder.current_time.setText(new SimpleDateFormat("dd MMM yyyy\nHH:mm").format(new Date(currentBlock.getMedianTime() * 1000)));
++        holder.common_difficulty.setText(String.valueOf(currentBlock.getPowMin()));
++
++        holder.switch2.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
++            @Override
++            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
++                initDu();
++            }
++        });
++
++        initDu();
++        mSwipeLayout.setRefreshing(false);
++    }
++
++    @Override
++    public void onRefresh() {
++        lastUd = SqlService.getBlockSql(getActivity()).last(currency.getId());
++        BlockService.getCurrentBlock(getActivity(), currency, new CallbackBlock() {
++            @Override
++            public void methode(BlockUd blockUd) {
++                currentBlock = blockUd;
++                init();
++            }
++        });
++    }
++
++    public static class ViewHolder {
++        public View rootView;
++        public TextView currency_name;
++        public TextView nb_member;
++        public TextView nb_new_member;
++        public TextView monetary_mass;
++        public TextView monetary_member;
++        public TextView universale_dividende;
++        public TextView c;
++        public Switch switch2;
++        public TextView current_time;
++        public TextView common_difficulty;
++
++        public ViewHolder(View rootView) {
++            this.rootView = rootView;
++            this.currency_name = (TextView) rootView.findViewById(R.id.currency_name);
++            this.nb_member = (TextView) rootView.findViewById(R.id.nb_member);
++            this.nb_new_member = (TextView) rootView.findViewById(R.id.nb_new_member);
++            this.monetary_mass = (TextView) rootView.findViewById(R.id.monetary_mass);
++            this.monetary_member = (TextView) rootView.findViewById(R.id.textView11);
++            this.universale_dividende = (TextView) rootView.findViewById(R.id.universale_dividende);
++            this.c = (TextView) rootView.findViewById(R.id.c);
++            this.switch2 = (Switch) rootView.findViewById(R.id.switch2);
++            this.current_time = (TextView) rootView.findViewById(R.id.current_time);
++            this.common_difficulty = (TextView) rootView.findViewById(R.id.common_difficulty);
++        }
++
++    }
++}
+Index: app/src/main/res/layout/fragment_currency_rules_bis.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- app/src/main/res/layout/fragment_currency_rules_bis.xml	(revision )
++++ app/src/main/res/layout/fragment_currency_rules_bis.xml	(revision )
+@@ -0,0 +1,327 @@
++<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
++    android:layout_width="match_parent"
++    android:layout_height="match_parent"
++    android:orientation="vertical"
++    android:padding="16dp">
++
++    <android.support.v4.widget.SwipeRefreshLayout
++        android:id="@+id/swipe_layout"
++        android:layout_width="match_parent"
++        android:layout_height="match_parent">
++
++        <ScrollView
++            android:layout_width="match_parent"
++            android:layout_height="match_parent"
++            android:orientation="vertical"
++            android:visibility="visible">
++
++            <LinearLayout
++                android:layout_width="match_parent"
++                android:layout_height="match_parent"
++                android:orientation="vertical">
++
++                <RelativeLayout
++                    android:layout_width="match_parent"
++                    android:layout_height="match_parent">
++
++                    <ImageView
++                        android:id="@+id/imageView"
++                        android:layout_width="wrap_content"
++                        android:layout_height="wrap_content"
++                        android:src="@drawable/ic_bookmark_primary_36dp" />
++
++                    <TextView
++                        android:id="@+id/textView6"
++                        android:layout_width="wrap_content"
++                        android:layout_height="wrap_content"
++                        android:layout_centerVertical="true"
++                        android:layout_toEndOf="@+id/imageView"
++                        android:layout_toRightOf="@+id/imageView"
++                        android:text="@string/name_curency"
++                        android:textAppearance="?android:attr/textAppearanceMedium" />
++
++                    <TextView
++                        android:id="@+id/currency_name"
++                        android:layout_width="wrap_content"
++                        android:layout_height="wrap_content"
++                        android:layout_alignParentEnd="true"
++                        android:layout_alignParentRight="true"
++                        android:layout_centerVertical="true"
++                        android:textAppearance="?android:attr/textAppearanceMedium" />
++                </RelativeLayout>
++
++                <RelativeLayout
++                    android:layout_width="match_parent"
++                    android:layout_height="match_parent">
++
++                    <ImageView
++                        android:id="@+id/imageView2"
++                        android:layout_width="wrap_content"
++                        android:layout_height="wrap_content"
++                        android:src="@drawable/ic_member_36dp" />
++
++                    <TextView
++                        android:id="@+id/textView8"
++                        android:layout_width="wrap_content"
++                        android:layout_height="wrap_content"
++                        android:layout_centerVertical="true"
++                        android:layout_toEndOf="@+id/imageView2"
++                        android:layout_toRightOf="@+id/imageView2"
++                        android:text="@string/member"
++                        android:textAppearance="?android:attr/textAppearanceMedium" />
++
++                    <TextView
++                        android:id="@+id/nb_member"
++                        android:layout_width="wrap_content"
++                        android:layout_height="wrap_content"
++                        android:layout_alignParentEnd="true"
++                        android:layout_alignParentRight="true"
++                        android:layout_centerVertical="true"
++                        android:textAppearance="?android:attr/textAppearanceMedium" />
++                </RelativeLayout>
++
++                <RelativeLayout
++                    android:layout_width="match_parent"
++                    android:layout_height="match_parent">
++
++                    <ImageView
++                        android:id="@+id/imageView1"
++                        android:layout_width="wrap_content"
++                        android:layout_height="wrap_content"
++                        android:src="@drawable/ic_new_member_36dp" />
++
++                    <TextView
++                        android:id="@+id/textView0"
++                        android:layout_width="wrap_content"
++                        android:layout_height="wrap_content"
++                        android:layout_centerVertical="true"
++                        android:layout_toEndOf="@+id/imageView1"
++                        android:layout_toRightOf="@+id/imageView1"
++                        android:text="@string/new_member"
++                        android:textAppearance="?android:attr/textAppearanceMedium" />
++
++                    <TextView
++                        android:id="@+id/nb_new_member"
++                        android:layout_width="wrap_content"
++                        android:layout_height="wrap_content"
++                        android:layout_alignParentEnd="true"
++                        android:layout_alignParentRight="true"
++                        android:layout_centerVertical="true"
++                        android:textAppearance="?android:attr/textAppearanceMedium" />
++                </RelativeLayout>
++
++                <include layout="@layout/separator" />
++
++                <RelativeLayout
++                    android:layout_width="match_parent"
++                    android:layout_height="match_parent">
++
++                    <ImageView
++                        android:id="@+id/imageView3"
++                        android:layout_width="wrap_content"
++                        android:layout_height="wrap_content"
++                        android:src="@drawable/ic_cercle_36dp" />
++
++                    <TextView
++                        android:id="@+id/textView10"
++                        android:layout_width="wrap_content"
++                        android:layout_height="wrap_content"
++                        android:layout_centerVertical="true"
++                        android:layout_toEndOf="@+id/imageView3"
++                        android:layout_toRightOf="@+id/imageView3"
++                        android:text="@string/monetary_mass"
++                        android:textAppearance="?android:attr/textAppearanceMedium" />
++
++                    <TextView
++                        android:id="@+id/monetary_mass"
++                        android:layout_width="wrap_content"
++                        android:layout_height="wrap_content"
++                        android:layout_alignParentEnd="true"
++                        android:layout_alignParentRight="true"
++                        android:layout_centerVertical="true"
++                        android:textAppearance="?android:attr/textAppearanceMedium" />
++                </RelativeLayout>
++
++                <RelativeLayout
++                    android:layout_width="match_parent"
++                    android:layout_height="match_parent">
++
++                    <ImageView
++                        android:id="@+id/imageView6"
++                        android:layout_width="wrap_content"
++                        android:layout_height="wrap_content"
++                        android:src="@drawable/ic_pie_graph" />
++
++                    <TextView
++                        android:id="@+id/textView7"
++                        android:layout_width="wrap_content"
++                        android:layout_height="wrap_content"
++                        android:layout_centerVertical="true"
++                        android:layout_toEndOf="@+id/imageView6"
++                        android:layout_toRightOf="@+id/imageView6"
++                        android:text="@string/monetary_by_member"
++                        android:textAppearance="?android:attr/textAppearanceMedium" />
++
++                    <TextView
++                        android:id="@+id/textView11"
++                        android:layout_width="wrap_content"
++                        android:layout_height="wrap_content"
++                        android:layout_alignParentEnd="true"
++                        android:layout_alignParentRight="true"
++                        android:layout_centerVertical="true"
++                        android:textAppearance="?android:attr/textAppearanceMedium" />
++                </RelativeLayout>
++
++                <RelativeLayout
++                    android:layout_width="match_parent"
++                    android:layout_height="match_parent">
++
++                    <ImageView
++                        android:id="@+id/imageView4"
++                        android:layout_width="wrap_content"
++                        android:layout_height="wrap_content"
++                        android:src="@drawable/ic_circle_bis_36dp" />
++
++                    <TextView
++                        android:id="@+id/textView12"
++                        android:layout_width="wrap_content"
++                        android:layout_height="wrap_content"
++                        android:layout_centerVertical="true"
++                        android:layout_toEndOf="@+id/imageView4"
++                        android:layout_toRightOf="@+id/imageView4"
++                        android:text="@string/universal_dividende"
++                        android:textAppearance="?android:attr/textAppearanceMedium" />
++
++                    <TextView
++                        android:id="@+id/universale_dividende"
++                        android:layout_width="wrap_content"
++                        android:layout_height="wrap_content"
++                        android:layout_alignParentEnd="true"
++                        android:layout_alignParentRight="true"
++                        android:layout_centerVertical="true"
++                        android:textAppearance="?android:attr/textAppearanceMedium" />
++                </RelativeLayout>
++
++                <RelativeLayout
++                    android:layout_width="match_parent"
++                    android:layout_height="match_parent">
++
++                    <ImageView
++                        android:id="@+id/imageView5"
++                        android:layout_width="wrap_content"
++                        android:layout_height="wrap_content"
++                        android:src="@drawable/ic_c_actuel_36dp" />
++
++                    <TextView
++                        android:id="@+id/textView14"
++                        android:layout_width="wrap_content"
++                        android:layout_height="wrap_content"
++                        android:layout_centerVertical="true"
++                        android:layout_toEndOf="@+id/imageView5"
++                        android:layout_toRightOf="@+id/imageView5"
++                        android:text="@string/c_actual"
++                        android:textAppearance="?android:attr/textAppearanceMedium" />
++
++                    <TextView
++                        android:id="@+id/c"
++                        android:layout_width="wrap_content"
++                        android:layout_height="wrap_content"
++                        android:layout_alignParentEnd="true"
++                        android:layout_alignParentRight="true"
++                        android:layout_centerVertical="true"
++                        android:textAppearance="?android:attr/textAppearanceMedium" />
++                </RelativeLayout>
++
++                <RelativeLayout
++                    android:layout_width="match_parent"
++                    android:layout_height="match_parent">
++
++                    <TextView
++                        android:id="@+id/textView16"
++                        android:layout_width="wrap_content"
++                        android:layout_height="wrap_content"
++                        android:text="@string/show_unit_relativ"
++                        android:textAppearance="?android:attr/textAppearanceMedium" />
++
++                    <Switch
++                        android:id="@+id/switch2"
++                        android:layout_width="wrap_content"
++                        android:layout_height="wrap_content"
++                        android:layout_alignParentEnd="true"
++                        android:layout_alignParentRight="true"
++                        android:layout_centerVertical="true" />
++                </RelativeLayout>
++
++                <include layout="@layout/separator" />
++
++                <RelativeLayout
++                    android:layout_width="match_parent"
++                    android:layout_height="match_parent">
++
++                    <ImageView
++                        android:id="@+id/imageView7"
++                        android:layout_width="wrap_content"
++                        android:layout_height="wrap_content"
++                        android:layout_alignParentLeft="true"
++                        android:layout_alignParentStart="true"
++                        android:layout_centerVertical="true"
++                        android:src="@drawable/ic_time_36dp" />
++
++                    <TextView
++                        android:id="@+id/textView13"
++                        android:layout_width="wrap_content"
++                        android:layout_height="wrap_content"
++                        android:layout_centerVertical="true"
++                        android:layout_toEndOf="@+id/imageView7"
++                        android:layout_toRightOf="@+id/imageView7"
++                        android:text="@string/current_time"
++                        android:textAppearance="?android:attr/textAppearanceMedium" />
++
++                    <TextView
++                        android:id="@+id/current_time"
++                        android:layout_width="wrap_content"
++                        android:layout_height="wrap_content"
++                        android:layout_alignParentEnd="true"
++                        android:layout_alignParentRight="true"
++                        android:layout_centerVertical="true"
++                        android:gravity="right"
++                        android:textAppearance="?android:attr/textAppearanceMedium" />
++
++                </RelativeLayout>
++
++                <RelativeLayout
++                    android:layout_width="match_parent"
++                    android:layout_height="match_parent">
++
++                    <ImageView
++                        android:id="@+id/imageView8"
++                        android:layout_width="wrap_content"
++                        android:layout_height="wrap_content"
++                        android:layout_alignParentLeft="true"
++                        android:layout_alignParentStart="true"
++                        android:layout_alignParentTop="true"
++                        android:src="@drawable/ic_lock_36dp" />
++
++                    <TextView
++                        android:id="@+id/textView17"
++                        android:layout_width="wrap_content"
++                        android:layout_height="wrap_content"
++                        android:layout_centerVertical="true"
++                        android:layout_toEndOf="@+id/imageView8"
++                        android:layout_toRightOf="@+id/imageView8"
++                        android:text="@string/common_difficulty"
++                        android:textAppearance="?android:attr/textAppearanceMedium" />
++
++                    <TextView
++                        android:id="@+id/common_difficulty"
++                        android:layout_width="wrap_content"
++                        android:layout_height="wrap_content"
++                        android:layout_alignParentEnd="true"
++                        android:layout_alignParentRight="true"
++                        android:layout_centerVertical="true"
++                        android:textAppearance="?android:attr/textAppearanceMedium" />
++                </RelativeLayout>
++            </LinearLayout>
++        </ScrollView>
++    </android.support.v4.widget.SwipeRefreshLayout>
++</LinearLayout>
+\ No newline at end of file
